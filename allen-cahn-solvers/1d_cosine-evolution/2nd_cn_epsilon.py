@@ -32,22 +32,22 @@ def read_2d_list_from_file(filename):
         list_2d.append(temp)
     return list_2d    
 
-for epsilon in [0.01]:#,0.04,0.08,0.16]:
+# 2nd Order Crank-Nicolson implicit scheme 
+for epsilon in [0.04]:#,0.04,0.08,0.16]:
     print("========================>Current epsilon: ",epsilon)
-    for grid_num in [512*80]:
-        for dt in [0.00002/80]: #,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]:
+    for grid_num in [512]:
+        for dt in [0.0005]: #,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]:
         # for dt in [0.9]:
             x_0 = -1 
             x_N = 1
             mesh = IntervalMesh(grid_num,x_0,x_N)
             #mesh = UnitSquareMesh(grid_point,grid_point)
             # dt = 1
-            T =0.0004 #0.000016
-            print_frequency = 80
-            fine_coarse = "fine_0d0004" #"reference" # "reference" 
-            sol_space = 80 #when use fine mesh, set to other integer
-            figure = False
-            write_to_file = True
+            T = 0.01
+            print_frequency = 2
+            fine_coarse = "coarse" #"reference" # "reference" 
+            sol_space = 1 #when use fine mesh, set to other integer
+            figure = True 
 
             P1 = FiniteElement('Lagrange',mesh.ufl_cell(),1)
             V1 = FunctionSpace(mesh,P1)
@@ -59,9 +59,7 @@ for epsilon in [0.01]:#,0.04,0.08,0.16]:
             #initial condition
             #eta_0 = Expression('sqrt((x[0]*x[0]+ x[1]*x[1])) < 100 + DOLFIN_EPS ? 1 : -1',degree = 2)
             #eta_0 = Expression('tanh((sqrt(x[0]*x[0]+ x[1]*x[1])-0.6)/(sqrt(2)*eps))',degree = 2,eps = epsilon )
-            #eta_0 = Expression('-sin(pi*x[0])',degree = 2)
             eta_0 = Expression('cos(pi*x[0])',degree = 2)
-            #eta_0 = Expression('x[0]+0.5',degree = 2)
             #eta_0 = project(eta_0,V1)
             eta_n.assign(eta_0)
             
@@ -71,7 +69,10 @@ for epsilon in [0.01]:#,0.04,0.08,0.16]:
 
             #weak form
             #F_imp = (eta-eta_n)/Constant(dt)*v*dx-eta*v*dx + eta*eta*eta*v*dx + dot(grad(eta),grad(v))*dx
-            F_imp = (eta-eta_n)/Constant(dt)*v*dx + dot(grad(eta),grad(v))*dx - 1/(Constant(epsilon)*Constant(epsilon))*(- eta * ( eta-1 ) * ( eta+1 ) * v * dx)
+            F_imp = (eta-eta_n)/Constant(dt)*v*dx + Constant(0.5)*dot(grad(eta),grad(v))*dx \
+                    + Constant(0.5)*dot(grad(eta_n),grad(v))*dx \
+                    + 1/(Constant(2)*Constant(epsilon)*Constant(epsilon))*( eta * ( eta-1 ) * ( eta+1 ) * v * dx) \
+                    + 1/(Constant(2)*Constant(epsilon)*Constant(epsilon))*( eta_n * ( eta_n-1 ) * ( eta_n+1 ) * v * dx)
 
             deta = TrialFunction(V1)
             Jac = derivative(F_imp,eta,deta)
@@ -100,10 +101,9 @@ for epsilon in [0.01]:#,0.04,0.08,0.16]:
             ts = []
             a1 = time.time()
 
-            if figure:
+            if figure: 
                 plt.figure()
                 plot(eta)
-                plt.ylim([-1.1,1.1])
                 plt.show()
 
             start_time = time.time()
@@ -117,17 +117,17 @@ for epsilon in [0.01]:#,0.04,0.08,0.16]:
 
                 prm = solver.parameters
                 prm['newton_solver']['relaxation_parameter'] = 0.9
-                prm['newton_solver']['maximum_iterations'] = 200
-                prm['newton_solver']['absolute_tolerance'] = 1E-9
-                prm['newton_solver']['relative_tolerance'] = 1E-10
+                prm['newton_solver']['maximum_iterations'] = 100
+                prm['newton_solver']['absolute_tolerance'] = 1E-5
+                prm['newton_solver']['relative_tolerance'] = 1E-7
                 #prm['newton_solver']['linear_solver'] = 'pcg'  # 'mumps', 'gmres', 'bicgstab'
                 #prm['newton_solver']['linear_solver'] = 'superlu_dist'  # 'mumps', 'gmres', 'bicgstab'
                 #prm['newton_solver']['preconditioner'] = 'hypre_amg'   # 'hypre_euclid'
                 prm['newton_solver']['krylov_solver']['nonzero_initial_guess'] = True
                 #solver.set_operator(A)  
                 prm['newton_solver']['krylov_solver']['monitor_convergence'] = True
-                prm['newton_solver']['krylov_solver']['absolute_tolerance'] = 1E-14
-                prm['newton_solver']['krylov_solver']['relative_tolerance'] = 1E-14
+                prm['newton_solver']['krylov_solver']['absolute_tolerance'] = 1E-10
+                prm['newton_solver']['krylov_solver']['relative_tolerance'] = 1E-10
                 # prm['newton_solver']['linear_solver'] = 'gmres'  # 'mumps', 'gmres', 'bicgstab'
                 # prm['newton_solver']['preconditioner'] = 'ilu'   # 'hypre_euclid'
                 
@@ -141,20 +141,18 @@ for epsilon in [0.01]:#,0.04,0.08,0.16]:
                 solver.solve()
                 eta_n.assign(eta)
 
+                counter += 1
                 if counter % print_frequency  == 0:
-                    if figure:
+                    if figure: 
                         plt.figure()
                         plot(eta)
-                        plt.ylim([-1.1,1.1])
                         plt.show()
-                        #plt.savefig(str(counter)+"_fine.png")
                     solutions.append(eta.vector().get_local()[::sol_space])
-                counter += 1
+            
             #solutions is a list contain 1d arrays, save them to human readable txt file
-            if write_to_file: 
-                solutions = array_2d_to_list(solutions)
-                filename = "epsilon"+str(epsilon)+"_"+fine_coarse+".txt"
-                write_2d_list_to_file(filename,solutions)
+            solutions = array_2d_to_list(solutions)
+            filename = "2nd_eps"+str(epsilon)+"_"+fine_coarse+".txt"
+            write_2d_list_to_file(filename,solutions)
 
             #compute slope and calculate relative error
             # slope, intercept, r_value, p_value, std_err = stats.linregress(ts,Rs)
